@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<script src="https://cdn.jsdelivr.net/npm/fft-js@0.0.12/fft.js"></script>
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
@@ -258,8 +259,9 @@
         SAMPLE_RATE: 20,           // 采样率 20 Hz (每50ms一个数据)
         BUFFER_DURATION: 10,        // 保留最近10秒的数据用于绘图
         WINDOW_DURATION: 2,          // 滑动窗口长度（秒），用于特征计算
-        FREEZE_INDEX_THRESHOLD: 0.6, // 冻结指数阈值（示例，后续可调整）
-        AMP_VARIANCE_THRESHOLD: 0.5  // 幅度方差阈值（简单判断用）
+        AMP_VARIANCE_THRESHOLD: 0.5,  // 幅度方差阈值（简单判断用）
+        FREEZE_INDEX_THRESHOLD: 2.0,   // 冻结指数阈值（可调）
+        FI_LOW_THRESHOLD: 1.2           // 预警阈值
     };
 
     // 计算缓冲区大小
@@ -424,51 +426,81 @@
     let featureWindow = [];
 
     function processNewData(newPoint) {
-        // 1. 维护滑动窗口（只保留最近 WINDOW_SIZE 条数据）
-        featureWindow.push(newPoint);
-        if (featureWindow.length > WINDOW_SIZE) {
-            featureWindow.shift();
-        }
+    // 1. 维护滑动窗口（不变）
+    featureWindow.push(newPoint);
+    if (featureWindow.length > WINDOW_SIZE) {
+        featureWindow.shift();
+    }
+    if (featureWindow.length < WINDOW_SIZE) return;
 
-        // 2. 如果窗口未满，不进行计算
-        if (featureWindow.length < WINDOW_SIZE) return;
+    // 2. 提取窗口内三个轴的加速度序列
+    const xVals = featureWindow.map(d => d.x);
+    const yVals = featureWindow.map(d => d.y);
+    const zVals = featureWindow.map(d => d.z);
 
-        // 3. 从窗口中提取特征（这里以简单的幅度方差为例）
-        //    实际 FOG 检测需要更复杂的频域特征，后续可替换
-        const xVals = featureWindow.map(d => d.x);
-        const yVals = featureWindow.map(d => d.y);
-        const zVals = featureWindow.map(d => d.z);
+    // 3. 计算合加速度幅值序列（或者分别处理三轴，这里简化用合加速度）
+    const magVals = featureWindow.map(d => Math.sqrt(d.x*d.x + d.y*d.y + d.z*d.z));
 
-        // 计算合加速度幅值 = sqrt(x^2+y^2+z^2)
-        const magnitudes = featureWindow.map(d => Math.sqrt(d.x*d.x + d.y*d.y + d.z*d.z));
-        const mean = magnitudes.reduce((a, b) => a + b, 0) / magnitudes.length;
-        const variance = magnitudes.reduce((acc, val) => acc + (val - mean)**2, 0) / magnitudes.length;
+    // 4. 使用时域方差作为辅助特征（保留）
+    const mean = magVals.reduce((a, b) => a + b, 0) / magVals.length;
+    const variance = magVals.reduce((acc, val) => acc + (val - mean)**2, 0) / magVals.length;
 
-        // 4. 根据阈值判断状态（冻结指数这里先用方差替代，真正的冻结指数需要频域分析）
-        const freezeIndex = variance; // 暂用方差模拟
-        document.getElementById('freezeIndex').innerText = freezeIndex.toFixed(2);
+    // 5. 计算频域特征：冻结指数
+    const freezeIndex = computeFreezeIndex(magVals); // 自定义函数
 
-        let status = '正常';
-        let suggestion = '🟢 步态平稳，继续保持。';
-        let statusClass = 'normal';
+    // 6. 综合判断（先试用FI为主，方差为辅）
+    let status = '正常';
+    let suggestion = '🟢 步态平稳，继续保持。';
+    let statusClass = 'normal';
 
-        if (freezeIndex < CONFIG.AMP_VARIANCE_THRESHOLD) {
-            status = '预警';
-            suggestion = '🟡 步态幅度减小，可能有冻结风险，尝试加大步幅或听节拍器。';
-            statusClass = 'warning';
-        }
-        if (freezeIndex < CONFIG.AMP_VARIANCE_THRESHOLD * 0.5) {
-            status = '冻结';
-            suggestion = '🔴 疑似发生冻结，建议停止行走，重心转移或原地踏步。';
-            statusClass = 'fog';
-        }
-
-        // 更新界面
-        document.getElementById('gaitStatus').innerText = status;
-        document.getElementById('gaitStatus').className = 'status-value ' + statusClass;
-        document.getElementById('suggestionText').innerHTML = suggestion;
+    if (freezeIndex > CONFIG.FREEZE_INDEX_THRESHOLD) {
+        status = '冻结';
+        suggestion = '🔴 检测到冻结步态，建议停止行走，尝试重心转移或原地踏步。';
+        statusClass = 'fog';
+    } else if (freezeIndex > CONFIG.FI_LOW_THRESHOLD || variance < CONFIG.AMP_VARIANCE_THRESHOLD) {
+        // 预警：FI偏高 或 幅度方差过低
+        status = '预警';
+        suggestion = '🟡 步态异常，可能有冻结风险，注意步幅和节奏。';
+        statusClass = 'warning';
     }
 
+    // 更新界面（增加FI显示）
+    document.getElementById('freezeIndex').innerText = freezeIndex.toFixed(2);
+    document.getElementById('gaitStatus').innerText = status;
+    document.getElementById('gaitStatus').className = 'status-value ' + statusClass;
+    document.getElementById('suggestionText').innerHTML = suggestion;
+}
+
+    function computeFreezeIndex(signal) {
+    // 输入：一段时间的合加速度幅值序列（长度 = WINDOW_SIZE，即 2秒 * 20Hz = 40点）
+    const n = signal.length;
+    
+    // 对信号进行 FFT
+    const phasors = fft(signal); // 返回复数数组
+    
+    // 计算功率谱（每个频率的幅值平方）
+    const power = phasors.map(p => p.real * p.real + p.imag * p.imag);
+    
+    // 频率分辨率 = 采样率 / 点数 = 20Hz / 40 = 0.5 Hz
+    const freqStep = CONFIG.SAMPLE_RATE / n; // 0.5 Hz
+    
+    // 计算低频段能量 (0.5~3 Hz)：对应索引 1~6（因为0Hz是直流，排除）
+    let lowBandPower = 0;
+    for (let i = 1; i <= 6; i++) { // 1*0.5=0.5Hz, 6*0.5=3Hz
+        lowBandPower += power[i];
+    }
+    
+    // 计算高频段能量 (3~8 Hz)：对应索引 6~16（3Hz/0.5=6, 8Hz/0.5=16）
+    let highBandPower = 0;
+    for (let i = 6; i <= 16; i++) {
+        highBandPower += power[i];
+    }
+    
+    // 避免除零
+    if (lowBandPower === 0) return 0;
+    
+    return highBandPower / lowBandPower;
+}
     // ================== 模块6：模拟数据生成器 ==================
     let simulateInterval = null;
 
