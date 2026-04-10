@@ -1,611 +1,331 @@
 <!DOCTYPE html>
-<script src="https://cdn.jsdelivr.net/npm/fft-js@0.0.12/fft.js"></script>
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>冻结步态检测 · 帕金森辅助</title>
-    <!-- 使用 ECharts 5 用于实时图表 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>冻结步态实时监测 | 完整临床分析</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-            background: #f4f7fb;
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: #f0f4f9;
             padding: 16px;
         }
-
         .container {
-            max-width: 480px;
-            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
             background: white;
             border-radius: 32px;
-            box-shadow: 0 20px 40px rgba(0,10,30,0.1);
-            padding: 24px 20px 30px;
-            border: 1px solid rgba(0,0,0,0.03);
+            padding: 20px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.1);
         }
-
-        h1 {
-            font-size: 24px;
-            font-weight: 600;
-            color: #0b2545;
-            margin-bottom: 4px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .subtitle {
-            font-size: 14px;
-            color: #5e6f8c;
-            margin-bottom: 24px;
-            border-left: 3px solid #5089c6;
-            padding-left: 12px;
-            background: #f0f4fa;
-            border-radius: 0 12px 12px 0;
-            line-height: 1.4;
-        }
-
-        /* 图表卡片 */
-        .chart-card {
-            background: #ffffff;
-            border-radius: 24px;
-            padding: 16px 12px 12px 12px;
-            margin-bottom: 20px;
-            box-shadow: inset 0 1px 3px rgba(0,0,0,0.02), 0 6px 12px rgba(0,20,50,0.05);
-            border: 1px solid #e9eef3;
-        }
-
-        .chart-title {
-            font-size: 14px;
-            font-weight: 500;
-            color: #3a4f6d;
-            margin-bottom: 10px;
-            display: flex;
-            justify-content: space-between;
-        }
-
-        #liveChart {
-            width: 100%;
-            height: 200px;
-        }
-
-        /* 状态面板 */
+        h1 { font-size: 24px; color: #1e2f4e; margin-bottom: 4px; }
+        .subtitle { font-size: 14px; color: #5a6e8a; margin-bottom: 20px; border-left: 3px solid #2c7da0; padding-left: 12px; }
+        .card { background: #ffffff; border-radius: 24px; padding: 12px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        #chart { width: 100%; height: 200px; }
         .status-panel {
-            background: linear-gradient(145deg, #f9fcff, #eef3f9);
-            border-radius: 20px;
-            padding: 18px 16px;
-            margin-bottom: 24px;
-            border: 1px solid #d9e2ef;
+            background: #eef3fc;
+            border-radius: 28px;
+            padding: 16px 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            margin-bottom: 20px;
         }
-
-        .status-left {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .status-label {
-            font-size: 13px;
-            color: #62748c;
-            letter-spacing: 0.3px;
-        }
-
-        .status-value {
-            font-size: 28px;
-            font-weight: 700;
-            margin-top: 4px;
-            transition: color 0.2s;
-        }
-
-        .status-value.normal { color: #2e7d32; }      /* 绿 */
-        .status-value.warning { color: #ed6c02; }    /* 橙 */
-        .status-value.fog { color: #b71c1c; }        /* 红 */
-
-        .suggestion-box {
-            background: #e4f0fa;
-            border-radius: 18px;
-            padding: 14px 18px;
+        .status-label { font-size: 14px; color: #3a5a78; }
+        .status-value { font-size: 32px; font-weight: 700; }
+        .status-value.normal { color: #2e7d32; }
+        .status-value.warning { color: #ed6c02; }
+        .status-value.fog { color: #c62828; }
+        .suggestion {
+            background: #e1f0fa;
+            border-radius: 24px;
+            padding: 16px;
+            margin-bottom: 24px;
+            border-left: 6px solid #2c7da0;
             font-size: 15px;
-            color: #0b3954;
-            border-left: 5px solid #5089c6;
-            line-height: 1.5;
-            margin-bottom: 25px;
-            box-shadow: 0 2px 8px rgba(0,80,120,0.1);
+            color: #0a3146;
         }
-
-        /* 按钮组 */
-        .button-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            margin-bottom: 18px;
-        }
-
         button {
+            width: 100%;
             background: white;
-            border: 1.5px solid #cdddec;
-            padding: 16px 0;
+            border: 1.5px solid #cbdde9;
+            padding: 14px;
             border-radius: 40px;
             font-size: 16px;
-            font-weight: 550;
-            color: #1f3a5f;
-            transition: all 0.2s ease;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+            font-weight: 600;
+            margin-bottom: 12px;
             cursor: pointer;
-            backdrop-filter: blur(4px);
         }
-
         button.primary {
-            background: #1f3a5f;
-            border-color: #1f3a5f;
+            background: #1e3a5f;
+            border-color: #1e3a5f;
             color: white;
-            box-shadow: 0 8px 16px rgba(31,58,95,0.25);
         }
-
-        button.primary:active { background: #102b44; transform: scale(0.97); }
-        button:active { background: #f2f6fc; transform: scale(0.98); }
-
-        .file-upload {
-            grid-column: span 2;
-            background: #eef3f9;
-            border-radius: 40px;
-            padding: 10px 18px;
-            font-size: 14px;
-            color: #2c405e;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            border: 1px dashed #8da9d0;
-            margin-top: 8px;
-        }
-
-        .file-upload input {
-            display: none;
-        }
-
-        .file-upload label {
-            flex: 1;
-            text-align: center;
-            padding: 8px 0;
-            background: white;
-            border-radius: 40px;
-            font-weight: 500;
-            color: #1f3a5f;
-            border: 1px solid #b8cbe0;
-        }
-
-        .footnote {
-            text-align: center;
-            font-size: 11px;
-            color: #8a9bb8;
+        button:active { transform: scale(0.97); }
+        .analysis-section {
             margin-top: 20px;
-            border-top: 1px solid #dee6f0;
-            padding-top: 15px;
+            border-top: 1px solid #ddd;
+            padding-top: 20px;
         }
-        .footnote a {
-            color: #4e7bb3;
-            text-decoration: none;
+        .analysis-section img {
+            max-width: 100%;
+            border-radius: 16px;
+            margin-top: 10px;
+            border: 1px solid #ccc;
         }
+        .report-text {
+            background: #f9f9f9;
+            padding: 12px;
+            border-radius: 16px;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            margin-bottom: 20px;
+        }
+        .footer { font-size: 11px; color: #8ea0b8; text-align: center; margin-top: 20px; }
     </style>
 </head>
 <body>
 <div class="container">
-    <h1>🚶 冻结步态检测 <span style="font-size: 14px; background: #e9f0f9; padding: 2px 10px; border-radius: 30px; color:#2f4b7c;">辅助分析</span></h1>
-    <div class="subtitle">实时加速度分析 · 帕金森病冻结步态 (FOG) 原型</div>
+    <h1>🚶 冻结步态临床监测</h1>
+    <div class="subtitle">实时采集 · 云端完整分析（雷达图/趋势图/报告）</div>
 
-    <!-- 实时图表区域 -->
-    <div class="chart-card">
-        <div class="chart-title">
-            <span>📈 三轴线性加速度 (m/s²)</span>
-            <span style="color:#8a9bb8;">最近10秒</span>
-        </div>
-        <div id="liveChart"></div>
+    <div class="card">
+        <div id="chart"></div>
     </div>
 
-    <!-- 当前状态 + 简明指标 -->
     <div class="status-panel">
-        <div class="status-left">
-            <span class="status-label">当前步态状态</span>
-            <span class="status-value normal" id="gaitStatus">正常</span>
+        <div>
+            <div class="status-label">实时风险</div>
+            <div class="status-value normal" id="gaitStatus">未连接</div>
         </div>
         <div style="text-align: right;">
-            <div style="font-size:13px; color:#62748c;">冻结指数</div>
-            <div style="font-size:22px; font-weight:600; color:#1f3a5f;" id="freezeIndex">0.21</div>
+            <div class="status-label">最新概率</div>
+            <div style="font-size: 28px; font-weight: bold;" id="riskProb">0%</div>
         </div>
     </div>
 
-    <!-- 实时建议 -->
-    <div class="suggestion-box" id="suggestionText">
-        🟢 步态平稳，继续保持。
+    <div class="suggestion" id="suggestionText">
+        🔵 请点击下方按钮连接蓝牙设备
     </div>
 
-    <!-- 操作按钮组 -->
-    <div class="button-grid">
-        <button class="primary" id="startBtn">▶ 开始采集</button>
-        <button id="stopBtn" disabled>⏹️ 停止</button>
-        <button id="connectBtn">🔗 连接蓝牙</button>
-        <button id="simulateBtn">📳 模拟数据</button>
+    <button id="connectBtn" class="primary">🔗 连接 M5StickC Plus</button>
+    <button id="disconnectBtn" disabled>⏹️ 断开连接</button>
+
+    <div class="analysis-section">
+        <h3>📋 临床分析报告（每30秒更新）</h3>
+        <div id="reportText" class="report-text">等待分析...</div>
+        <h3>📊 冻结步态信号图</h3>
+        <img id="fogPlotImg" src="" alt="FOG分析图" style="display:none;">
+        <h3>📉 跌倒风险雷达图</h3>
+        <img id="radarPlotImg" src="" alt="雷达图" style="display:none;">
+        <h3>📈 历史趋势图</h3>
+        <img id="trendPlotImg" src="" alt="趋势图" style="display:none;">
     </div>
 
-    <!-- 文件上传（预录数据） -->
-    <div class="file-upload">
-        <span>📁 测试用预录数据</span>
-        <label for="csvFile">选择 CSV 文件</label>
-        <input type="file" id="csvFile" accept=".csv, text/csv">
-    </div>
-
-    <div class="footnote">
-        ⚠️ 仅供参考，不可替代专业医疗诊断 · <a href="#" target="_blank">关于项目</a>
+    <div class="footer">
+        ⚠️ 临床辅助工具，不可替代专业诊断。需要 Chrome/Edge 浏览器。
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
 <script>
-    // ================== 模块1：全局配置 ==================
-    const CONFIG = {
-        SAMPLE_RATE: 20,           // 采样率 20 Hz (每50ms一个数据)
-        BUFFER_DURATION: 10,        // 保留最近10秒的数据用于绘图
-        WINDOW_DURATION: 2,          // 滑动窗口长度（秒），用于特征计算
-        AMP_VARIANCE_THRESHOLD: 0.5,  // 幅度方差阈值（简单判断用）
-        FREEZE_INDEX_THRESHOLD: 2.0,   // 冻结指数阈值（可调）
-        FI_LOW_THRESHOLD: 1.2           // 预警阈值
-    };
+    // ==================== 配置 ====================
+    const API_ENDPOINT_REALTIME = "https://lilacxu1108-fogmedicaldetector.ms.show/realtime_analysis";
+    const PATIENT_ID = "mobile_user";  // 可让用户输入，此处固定
+    const SAMPLE_RATE = 50;
+    const WINDOW_SIZE = 100;   // 实时图表用
 
-    // 计算缓冲区大小
-    const BUFFER_SIZE = CONFIG.SAMPLE_RATE * CONFIG.BUFFER_DURATION;
-    const WINDOW_SIZE = CONFIG.SAMPLE_RATE * CONFIG.WINDOW_DURATION;
+    // BLE 配置
+    const SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
+    const CHARACTERISTIC_UUID = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E";
+    const DEVICE_NAME = "FOG_Sensor_M5";
 
-    // ================== 模块2：环形缓冲区 ==================
-    class CircularBuffer {
-        constructor(size) {
-            this.size = size;
-            this.buffer = [];          // 存储 {x, y, z, timestamp}
-            this.offset = 0;
-        }
-        push(item) {
-            if (this.buffer.length < this.size) {
-                this.buffer.push(item);
-            } else {
-                this.buffer[this.offset] = item;
-                this.offset = (this.offset + 1) % this.size;
-            }
-        }
-        getLatest(n) {
-            // 返回按时间正序的最新 n 条数据（不足则返回全部）
-            if (n > this.buffer.length) n = this.buffer.length;
-            let result = [];
-            if (this.buffer.length < this.size) {
-                result = this.buffer.slice(-n);
-            } else {
-                for (let i = 0; i < n; i++) {
-                    let idx = (this.offset - n + i + this.size) % this.size;
-                    result.push(this.buffer[idx]);
-                }
-            }
-            return result;
-        }
-        getAll() {
-            return this.getLatest(this.buffer.length);
-        }
-        clear() {
-            this.buffer = [];
-            this.offset = 0;
-        }
-        get length() {
-            return this.buffer.length;
-        }
-    }
+    let device = null;
+    let characteristic = null;
+    let dataBuffer = [];      // 实时图表缓冲（最近100点）
+    let historyBuffer = [];   // 历史分析缓冲（所有原始点）
+    let chart = null;
+    let isCollecting = false;
+    let analysisInterval = null;
 
-    // 创建缓冲区实例
-    const dataBuffer = new CircularBuffer(BUFFER_SIZE);
-
-    // ================== 模块3：ECharts 初始化与更新 ==================
-    const chartDom = document.getElementById('liveChart');
-    let myChart = null;
-    if (chartDom) {
-        myChart = echarts.init(chartDom);
-        // 初始空白图表
-        myChart.setOption({
+    // ==================== 实时图表 ====================
+    function initChart() {
+        const dom = document.getElementById('chart');
+        chart = echarts.init(dom);
+        chart.setOption({
             grid: { left: '3%', right: '3%', top: 15, bottom: 25 },
-            xAxis: { type: 'category', data: [], axisLabel: { fontSize: 9 } },
-            yAxis: { type: 'value', min: -5, max: 5, splitLine: { lineStyle: { type: 'dashed' } } },
+            xAxis: { type: 'category', data: [], name: '时间 (秒)' },
+            yAxis: { type: 'value', name: '加速度 (g)', min: -2, max: 2 },
             series: [
-                { name: 'X轴', type: 'line', data: [], smooth: true, lineStyle: { width: 2, color: '#d14a61' }, symbol: 'none' },
-                { name: 'Y轴', type: 'line', data: [], smooth: true, lineStyle: { width: 2, color: '#579f5e' }, symbol: 'none' },
-                { name: 'Z轴', type: 'line', data: [], smooth: true, lineStyle: { width: 2, color: '#4e7ab3' }, symbol: 'none' }
+                { name: '垂直 V', type: 'line', data: [], smooth: true, lineStyle: { width: 2, color: '#d14a61' }, symbol: 'none' },
+                { name: '内外 ML', type: 'line', data: [], smooth: true, lineStyle: { width: 2, color: '#579f5e' }, symbol: 'none' },
+                { name: '前后 AP', type: 'line', data: [], smooth: true, lineStyle: { width: 2, color: '#4e7ab3' }, symbol: 'none' }
             ],
             tooltip: { trigger: 'axis' },
-            legend: { show: true, bottom: 0, icon: 'circle', itemWidth: 8, itemHeight: 8 }
+            legend: { show: true, bottom: 0, left: 'center' }
         });
     }
 
-    // 更新图表：从缓冲区取最新数据并刷新
     function updateChart() {
-        if (!myChart) return;
-        const allData = dataBuffer.getAll();
-        if (allData.length === 0) return;
-
-        // 生成X轴标签（相对时间，以秒为单位）
-        const startTime = allData[0].timestamp;
-        const xAxisData = allData.map(d => ((d.timestamp - startTime) / 1000).toFixed(1) + 's');
-        const xSeries = allData.map(d => d.x);
-        const ySeries = allData.map(d => d.y);
-        const zSeries = allData.map(d => d.z);
-
-        myChart.setOption({
-            xAxis: { data: xAxisData },
+        if (!chart || dataBuffer.length === 0) return;
+        const xAxis = dataBuffer.map((_, i) => (-(dataBuffer.length - i) / SAMPLE_RATE).toFixed(1) + 's');
+        const vData = dataBuffer.map(d => d.v);
+        const mlData = dataBuffer.map(d => d.ml);
+        const apData = dataBuffer.map(d => d.ap);
+        chart.setOption({
+            xAxis: { data: xAxis },
             series: [
-                { data: xSeries },
-                { data: ySeries },
-                { data: zSeries }
+                { data: vData },
+                { data: mlData },
+                { data: apData }
             ]
         });
     }
 
-    // ================== 模块4：加速度计数据采集 ==================
-    let isCollecting = false;
-    let collectInterval = null;
+    // ==================== 数据处理 ====================
+    function processDataPoint(point) {
+        if (!isCollecting) return;
+        // 实时图表
+        dataBuffer.push(point);
+        if (dataBuffer.length > WINDOW_SIZE) dataBuffer.shift();
+        updateChart();
+        // 历史分析缓冲（保留所有点，最多30秒*50=1500点，足够）
+        historyBuffer.push(point);
+        if (historyBuffer.length > 2000) historyBuffer.shift();
+    }
 
-    // 请求传感器权限并开始监听
-    async function startSensorCollection() {
-        if (isCollecting) return;
+    // 定期发送数据到云端分析
+    function startPeriodicAnalysis() {
+        if (analysisInterval) clearInterval(analysisInterval);
+        analysisInterval = setInterval(async () => {
+            if (historyBuffer.length < 100) {
+                console.log("数据不足，跳过分析");
+                return;
+            }
+            const payload = {
+                patient_id: PATIENT_ID,
+                raw_data: {
+                    v: historyBuffer.map(p => p.v),
+                    ml: historyBuffer.map(p => p.ml),
+                    ap: historyBuffer.map(p => p.ap)
+                },
+                sample_rate: SAMPLE_RATE
+            };
+            try {
+                const response = await fetch(API_ENDPOINT_REALTIME, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                // 显示报告文本
+                document.getElementById('reportText').innerText = result.report || "无报告";
+                // 显示图片
+                if (result.fog_plot) {
+                    const fogImg = document.getElementById('fogPlotImg');
+                    fogImg.src = 'data:image/png;base64,' + result.fog_plot;
+                    fogImg.style.display = 'block';
+                }
+                if (result.radar_plot) {
+                    const radarImg = document.getElementById('radarPlotImg');
+                    radarImg.src = 'data:image/png;base64,' + result.radar_plot;
+                    radarImg.style.display = 'block';
+                }
+                if (result.trend_plot) {
+                    const trendImg = document.getElementById('trendPlotImg');
+                    trendImg.src = 'data:image/png;base64,' + result.trend_plot;
+                    trendImg.style.display = 'block';
+                }
+                // 可选：更新状态面板中的最新概率（如果有实时概率字段）
+                if (result.fog_count !== undefined) {
+                    document.getElementById('riskProb').innerText = result.fog_count + "次";
+                }
+                // 清空历史缓冲区，开始新的30秒周期
+                historyBuffer = [];
+            } catch (err) {
+                console.error("分析请求失败", err);
+                document.getElementById('reportText').innerText = "分析请求失败: " + err.message;
+            }
+        }, 30000); // 30秒
+    }
 
-        // 检查浏览器是否支持 DeviceMotionEvent
-        if (!window.DeviceMotionEvent) {
-            alert('您的浏览器不支持加速度计。请使用支持的运动传感器设备（如手机）并确保在 HTTPS 下访问。');
+    // ==================== BLE 连接 ====================
+    function onDataReceived(event) {
+        const decoder = new TextDecoder();
+        const value = decoder.decode(event.target.value);
+        try {
+            const data = JSON.parse(value);
+            if (typeof data.v === 'number' && typeof data.ml === 'number' && typeof data.ap === 'number') {
+                processDataPoint({ v: data.v, ml: data.ml, ap: data.ap });
+            } else {
+                console.warn("数据格式错误", data);
+            }
+        } catch(e) {
+            console.error("JSON解析失败", e);
+        }
+    }
+
+    async function connectBluetooth() {
+        if (!navigator.bluetooth) {
+            alert("您的浏览器不支持 Web Bluetooth。请使用 Chrome 或 Edge。");
             return;
         }
-
         try {
-            // 对于 iOS 13+ 需要请求权限
-            if (typeof DeviceMotionEvent.requestPermission === 'function') {
-                const permission = await DeviceMotionEvent.requestPermission();
-                if (permission !== 'granted') {
-                    alert('需要授权才能使用加速度计');
-                    return;
-                }
-            }
-
-            // 监听 device motion 事件
-            window.addEventListener('devicemotion', handleDeviceMotion);
+            const selected = await navigator.bluetooth.requestDevice({
+                filters: [{ name: DEVICE_NAME }],
+                optionalServices: [SERVICE_UUID]
+            });
+            device = selected;
+            const server = await device.gatt.connect();
+            const service = await server.getPrimaryService(SERVICE_UUID);
+            const char = await service.getCharacteristic(CHARACTERISTIC_UUID);
+            characteristic = char;
+            await characteristic.startNotifications();
+            characteristic.addEventListener('characteristicvaluechanged', onDataReceived);
             isCollecting = true;
-            console.log('传感器采集已启动');
-        } catch (error) {
-            console.error('启动传感器失败:', error);
-            alert('无法启动传感器: ' + error.message);
-        }
-    }
-
-    function handleDeviceMotion(event) {
-        if (!isCollecting) return;
-
-        // 获取线性加速度（去除重力），如果没有则用加速度总值的差值近似
-        let acc = event.acceleration; // 有的设备可能为 null
-        if (!acc) {
-            // 降级方案：使用加速度包含重力，通过高通滤波简单去除重力（此处简化）
-            acc = event.accelerationIncludingGravity;
-            if (!acc) return;
-            // 简单去除直流分量（示例中不实现真正滤波，提醒用户）
-            console.warn('设备未提供线性加速度，结果可能不准确');
-        }
-
-        const dataPoint = {
-            x: acc.x || 0,
-            y: acc.y || 0,
-            z: acc.z || 0,
-            timestamp: Date.now()
-        };
-        dataBuffer.push(dataPoint);
-
-        // 每次新数据到来，都进行特征提取和判断
-        processNewData(dataPoint);
-    }
-
-    function stopSensorCollection() {
-        if (!isCollecting) return;
-        window.removeEventListener('devicemotion', handleDeviceMotion);
-        isCollecting = false;
-        console.log('传感器采集已停止');
-    }
-
-    // ================== 模块5：特征提取与FOG判断 ==================
-    // 存储最近一个窗口的数据用于计算
-    let featureWindow = [];
-
-    function processNewData(newPoint) {
-    // 1. 维护滑动窗口（不变）
-    featureWindow.push(newPoint);
-    if (featureWindow.length > WINDOW_SIZE) {
-        featureWindow.shift();
-    }
-    if (featureWindow.length < WINDOW_SIZE) return;
-
-    // 2. 提取窗口内三个轴的加速度序列
-    const xVals = featureWindow.map(d => d.x);
-    const yVals = featureWindow.map(d => d.y);
-    const zVals = featureWindow.map(d => d.z);
-
-    // 3. 计算合加速度幅值序列（或者分别处理三轴，这里简化用合加速度）
-    const magVals = featureWindow.map(d => Math.sqrt(d.x*d.x + d.y*d.y + d.z*d.z));
-
-    // 4. 使用时域方差作为辅助特征（保留）
-    const mean = magVals.reduce((a, b) => a + b, 0) / magVals.length;
-    const variance = magVals.reduce((acc, val) => acc + (val - mean)**2, 0) / magVals.length;
-
-    // 5. 计算频域特征：冻结指数
-    const freezeIndex = computeFreezeIndex(magVals); // 自定义函数
-
-    // 6. 综合判断（先试用FI为主，方差为辅）
-    let status = '正常';
-    let suggestion = '🟢 步态平稳，继续保持。';
-    let statusClass = 'normal';
-
-    if (freezeIndex > CONFIG.FREEZE_INDEX_THRESHOLD) {
-        status = '冻结';
-        suggestion = '🔴 检测到冻结步态，建议停止行走，尝试重心转移或原地踏步。';
-        statusClass = 'fog';
-    } else if (freezeIndex > CONFIG.FI_LOW_THRESHOLD || variance < CONFIG.AMP_VARIANCE_THRESHOLD) {
-        // 预警：FI偏高 或 幅度方差过低
-        status = '预警';
-        suggestion = '🟡 步态异常，可能有冻结风险，注意步幅和节奏。';
-        statusClass = 'warning';
-    }
-
-    // 更新界面（增加FI显示）
-    document.getElementById('freezeIndex').innerText = freezeIndex.toFixed(2);
-    document.getElementById('gaitStatus').innerText = status;
-    document.getElementById('gaitStatus').className = 'status-value ' + statusClass;
-    document.getElementById('suggestionText').innerHTML = suggestion;
-}
-
-    function computeFreezeIndex(signal) {
-    // 输入：一段时间的合加速度幅值序列（长度 = WINDOW_SIZE，即 2秒 * 20Hz = 40点）
-    const n = signal.length;
-    
-    // 对信号进行 FFT
-    const phasors = fft(signal); // 返回复数数组
-    
-    // 计算功率谱（每个频率的幅值平方）
-    const power = phasors.map(p => p.real * p.real + p.imag * p.imag);
-    
-    // 频率分辨率 = 采样率 / 点数 = 20Hz / 40 = 0.5 Hz
-    const freqStep = CONFIG.SAMPLE_RATE / n; // 0.5 Hz
-    
-    // 计算低频段能量 (0.5~3 Hz)：对应索引 1~6（因为0Hz是直流，排除）
-    let lowBandPower = 0;
-    for (let i = 1; i <= 6; i++) { // 1*0.5=0.5Hz, 6*0.5=3Hz
-        lowBandPower += power[i];
-    }
-    
-    // 计算高频段能量 (3~8 Hz)：对应索引 6~16（3Hz/0.5=6, 8Hz/0.5=16）
-    let highBandPower = 0;
-    for (let i = 6; i <= 16; i++) {
-        highBandPower += power[i];
-    }
-    
-    // 避免除零
-    if (lowBandPower === 0) return 0;
-    
-    return highBandPower / lowBandPower;
-}
-    // ================== 模块6：模拟数据生成器 ==================
-    let simulateInterval = null;
-
-    function startSimulation() {
-        if (simulateInterval) return;
-        // 停止真实采集（如果正在运行）
-        stopSensorCollection();
-
-        // 清空缓冲区，重新开始
-        dataBuffer.clear();
-        featureWindow = [];
-
-        let time = 0;
-        simulateInterval = setInterval(() => {
-            // 生成模拟数据：正常时是正弦波，偶尔加入冻结段（幅度骤降）
-            let x = Math.sin(time * 2) * 2;
-            let y = Math.cos(time * 2) * 1.5;
-            let z = Math.sin(time * 1.5) * 1.8;
-
-            // 每 10 秒中插入 2 秒冻结（幅度降低到 10%）
-            const cycle = 10; // 10秒周期
-            const freezeStart = 4; // 第4秒开始
-            const freezeDuration = 2; // 持续2秒
-            const tMod = time % cycle;
-            if (tMod >= freezeStart && tMod < freezeStart + freezeDuration) {
-                x *= 0.1;
-                y *= 0.1;
-                z *= 0.1;
-            }
-
-            const dataPoint = {
-                x, y, z,
-                timestamp: Date.now()
-            };
-            dataBuffer.push(dataPoint);
-            processNewData(dataPoint);
-
-            time += 1 / CONFIG.SAMPLE_RATE; // 时间递增
-        }, 1000 / CONFIG.SAMPLE_RATE); // 按采样率触发
-    }
-
-    function stopSimulation() {
-        if (simulateInterval) {
-            clearInterval(simulateInterval);
-            simulateInterval = null;
-        }
-    }
-
-    // ================== 模块7：按钮事件绑定 ==================
-    document.getElementById('startBtn').addEventListener('click', async () => {
-        // 停止模拟（如果有）
-        stopSimulation();
-        // 启动真实采集
-        await startSensorCollection();
-        // 启用/禁用按钮
-        document.getElementById('startBtn').disabled = true;
-        document.getElementById('stopBtn').disabled = false;
-        // 如果之前没启动定时刷新图表，启动一个定时器（每秒刷新10次，平滑更新）
-        if (!chartInterval) startChartUpdater();
-    });
-
-    document.getElementById('stopBtn').addEventListener('click', () => {
-        stopSensorCollection();
-        stopSimulation();
-        document.getElementById('startBtn').disabled = false;
-        document.getElementById('stopBtn').disabled = true;
-    });
-
-    document.getElementById('simulateBtn').addEventListener('click', () => {
-        // 停止真实采集
-        stopSensorCollection();
-        // 启动模拟
-        startSimulation();
-        document.getElementById('startBtn').disabled = true;
-        document.getElementById('stopBtn').disabled = false;
-        if (!chartInterval) startChartUpdater();
-    });
-
-    document.getElementById('connectBtn').addEventListener('click', () => {
-        alert('蓝牙连接功能待实现 (Web Bluetooth API)\n后续可连接 ESP32 等硬件。');
-    });
-
-    // 文件上传功能（留空，后续可扩展）
-    document.getElementById('csvFile').addEventListener('change', (e) => {
-        if (e.target.files.length > 0) {
-            alert('文件上传功能待实现。您可以选择一个包含三列（x,y,z）的CSV文件，后续将回放数据。');
-        }
-    });
-
-    // ================== 定时刷新图表 ==================
-    let chartInterval = null;
-    function startChartUpdater() {
-        if (chartInterval) return;
-        chartInterval = setInterval(() => {
+            document.getElementById('connectBtn').disabled = true;
+            document.getElementById('disconnectBtn').disabled = false;
+            document.getElementById('gaitStatus').innerText = '监测中';
+            document.getElementById('suggestionText').innerHTML = '🟢 已连接，正在采集数据...';
+            dataBuffer = [];
+            historyBuffer = [];
             updateChart();
-        }, 100); // 每秒10次，保证流畅
+            startPeriodicAnalysis();
+        } catch (err) {
+            console.error("连接失败", err);
+            alert("连接失败: " + err.message);
+        }
     }
 
-    // 页面卸载时清理
-    window.addEventListener('beforeunload', () => {
-        if (chartInterval) clearInterval(chartInterval);
-        stopSensorCollection();
-        stopSimulation();
+    async function disconnectBluetooth() {
+        if (characteristic) {
+            await characteristic.stopNotifications();
+            characteristic.removeEventListener('characteristicvaluechanged', onDataReceived);
+        }
+        if (device && device.gatt.connected) {
+            await device.gatt.disconnect();
+        }
+        isCollecting = false;
+        if (analysisInterval) clearInterval(analysisInterval);
+        device = null;
+        characteristic = null;
+        document.getElementById('connectBtn').disabled = false;
+        document.getElementById('disconnectBtn').disabled = true;
+        document.getElementById('gaitStatus').innerText = '未连接';
+        document.getElementById('riskProb').innerText = '0%';
+        document.getElementById('suggestionText').innerHTML = '🔵 已断开，可重新连接';
+        dataBuffer = [];
+        historyBuffer = [];
+        updateChart();
+    }
+
+    window.addEventListener('load', () => {
+        initChart();
+        document.getElementById('connectBtn').addEventListener('click', connectBluetooth);
+        document.getElementById('disconnectBtn').addEventListener('click', disconnectBluetooth);
     });
 </script>
-
 </body>
 </html>
