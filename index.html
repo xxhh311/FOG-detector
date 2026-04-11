@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>冻结步态实时监测 | 完整临床分析</title>
+    <title>🧠 GaitSense: Complete Parkinson's Motor Assessment System</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -96,6 +96,13 @@
         <div id="chart"></div>
     </div>
 
+    <div style="margin-bottom: 15px;">
+    <label for="patientId" style="display: block; font-size: 14px; color: #3a5a78; margin-bottom: 6px;">👤 患者 ID</label>
+    <input type="text" id="patientId" placeholder="例如: PT-001" value="mobile_user" style="width: 100%; padding: 10px; border-radius: 20px; border: 1px solid #cbdde9; font-size: 16px;">
+    </div>
+
+    <div id="currentPatientDisplay" style="font-size: 12px; color: #5a6e8a; text-align: center; margin-top: 8px;"></div>
+
     <div class="status-panel">
         <div>
             <div class="status-label">实时风险</div>
@@ -133,13 +140,13 @@
 <script>
     // ==================== 配置 ====================
     const API_ENDPOINT_REALTIME = "https://lilacxu1108-fogmedicaldetector.ms.show/realtime_analysis";
-    const PATIENT_ID = "mobile_user";  // 可让用户输入，此处固定
+//const PATIENT_ID = "mobile_user";  // 可让用户输入，此处固定
     const SAMPLE_RATE = 50;
     const WINDOW_SIZE = 100;   // 实时图表用
 
     // BLE 配置
-    const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-    const CHARACTERISTIC_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+    const SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
+    const CHARACTERISTIC_UUID = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E";
     const DEVICE_NAME = "FOG_Sensor_M5";
 
     let device = null;
@@ -149,6 +156,23 @@
     let chart = null;
     let isCollecting = false;
     let analysisInterval = null;
+
+    function getPatientId() {
+    const input = document.getElementById('patientId');
+    let id = input.value.trim();
+    if (id === "") {
+        id = "anonymous";
+        input.value = id;
+    }
+    return id;
+}
+
+function updatePatientDisplay() {
+    const id = getPatientId();
+    document.getElementById('currentPatientDisplay').innerText = `当前患者: ${id}`;
+}
+// 在输入框变化时调用，以及在连接蓝牙时调用
+document.getElementById('patientId').addEventListener('input', updatePatientDisplay);
 
     // ==================== 实时图表 ====================
     function initChart() {
@@ -198,59 +222,43 @@
 
     // 定期发送数据到云端分析
     function startPeriodicAnalysis() {
-        if (analysisInterval) clearInterval(analysisInterval);
-        analysisInterval = setInterval(async () => {
-            if (historyBuffer.length < 100) {
-                console.log("数据不足，跳过分析");
-                return;
+    if (analysisInterval) clearInterval(analysisInterval);
+    analysisInterval = setInterval(async () => {
+        if (historyBuffer.length < 100) {
+            console.log(`数据不足，当前 ${historyBuffer.length} 点，跳过分析`);
+            return;
+        }
+        // 获取当前患者 ID
+        const patientId = getPatientId();
+        // 构建 URL 查询参数
+        const url = new URL(API_ENDPOINT_REALTIME);
+        url.searchParams.append('patient_id', patientId);
+        url.searchParams.append('sample_rate', SAMPLE_RATE);
+        
+        const payload = {
+            raw_data: {
+                v: historyBuffer.map(p => p.v),
+                ml: historyBuffer.map(p => p.ml),
+                ap: historyBuffer.map(p => p.ap)
             }
-            const payload = {
-                patient_id: PATIENT_ID,
-                raw_data: {
-                    v: historyBuffer.map(p => p.v),
-                    ml: historyBuffer.map(p => p.ml),
-                    ap: historyBuffer.map(p => p.ap)
-                },
-                sample_rate: SAMPLE_RATE
-            };
-            try {
-                const response = await fetch(API_ENDPOINT_REALTIME, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                const result = await response.json();
-                // 显示报告文本
-                document.getElementById('reportText').innerText = result.report || "无报告";
-                // 显示图片
-                if (result.fog_plot) {
-                    const fogImg = document.getElementById('fogPlotImg');
-                    fogImg.src = 'data:image/png;base64,' + result.fog_plot;
-                    fogImg.style.display = 'block';
-                }
-                if (result.radar_plot) {
-                    const radarImg = document.getElementById('radarPlotImg');
-                    radarImg.src = 'data:image/png;base64,' + result.radar_plot;
-                    radarImg.style.display = 'block';
-                }
-                if (result.trend_plot) {
-                    const trendImg = document.getElementById('trendPlotImg');
-                    trendImg.src = 'data:image/png;base64,' + result.trend_plot;
-                    trendImg.style.display = 'block';
-                }
-                // 可选：更新状态面板中的最新概率（如果有实时概率字段）
-                if (result.fog_count !== undefined) {
-                    document.getElementById('riskProb').innerText = result.fog_count + "次";
-                }
-                // 清空历史缓冲区，开始新的30秒周期
-                historyBuffer = [];
-            } catch (err) {
-                console.error("分析请求失败", err);
-                document.getElementById('reportText').innerText = "分析请求失败: " + err.message;
-            }
-        }, 30000); // 30秒
-    }
-
+        };
+        try {
+            const response = await fetch(url.toString(), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+            console.log("分析结果:", result);
+            // 这里可以更新页面上的雷达图、趋势图等
+            // 例如：显示 result.report, result.fog_plot 等
+        } catch (error) {
+            console.error("请求失败:", error);
+        }
+        // 清空历史缓冲区（或保留一部分重叠）
+        historyBuffer = [];
+    }, 30000); // 30 秒，可根据需要调整
+}
     // ==================== BLE 连接 ====================
     function onDataReceived(event) {
         const decoder = new TextDecoder();
