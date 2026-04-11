@@ -123,20 +123,27 @@
 
     <div class="analysis-section">
         <h3>📋 临床分析报告（每30秒更新）</h3>
-        <div id="reportText" class="report-text">等待分析...</div>
-        <h3>📊 冻结步态信号图</h3>
-        <img id="fogPlotImg" src="" alt="FOG分析图" style="display:none;">
-        <h3>📉 跌倒风险雷达图</h3>
-        <img id="radarPlotImg" src="" alt="雷达图" style="display:none;">
-        <h3>📈 历史趋势图</h3>
-        <img id="trendPlotImg" src="" alt="趋势图" style="display:none;">
-    </div>
+        <!-- 报告文本区域 -->
+<div id="reportText" class="report-text">等待分析...</div>
+
+<!-- 图片展示区域 -->
+<h3>📊 冻结步态信号图</h3>
+<img id="fogPlotImg" style="max-width:100%; display:none; border:1px solid #ddd; border-radius:12px; margin-top:8px;">
+
+<h3>📉 跌倒风险雷达图</h3>
+<img id="radarPlotImg" style="max-width:100%; display:none; border:1px solid #ddd; border-radius:12px; margin-top:8px;">
+
+<h3>📈 历史趋势图</h3>
+<img id="trendPlotImg" style="max-width:100%; display:none; border:1px solid #ddd; border-radius:12px; margin-top:8px;">
 
     <div class="footer">
         ⚠️ 临床辅助工具，不可替代专业诊断。需要 Chrome/Edge 浏览器。
     </div>
 </div>
-
+<p>🚨 冻结次数: <span id="fogCountValue">--</span></p>
+<p>📊 冻结比例: <span id="fogRatioValue">--</span></p>
+<p>⚠️ 跌倒风险分数: <span id="fallScoreValue">--</span></p>
+    
 <script>
     // ==================== 配置 ====================
     const API_ENDPOINT_REALTIME = "https://lilacxu1108-fogmedicaldetector.ms.show/realtime_analysis";
@@ -221,7 +228,7 @@ document.getElementById('patientId').addEventListener('input', updatePatientDisp
     }
 
     // 定期发送数据到云端分析
-    function startPeriodicAnalysis() {
+   function startPeriodicAnalysis() {
     if (analysisInterval) clearInterval(analysisInterval);
     analysisInterval = setInterval(async () => {
         if (historyBuffer.length < 100) {
@@ -250,14 +257,58 @@ document.getElementById('patientId').addEventListener('input', updatePatientDisp
             });
             const result = await response.json();
             console.log("分析结果:", result);
-            // 这里可以更新页面上的雷达图、趋势图等
-            // 例如：显示 result.report, result.fog_plot 等
+            
+            // ========== 将结果显示在页面上 ==========
+            // 1. 报告文本
+            const reportDiv = document.getElementById('reportText');
+            if (reportDiv) {
+                reportDiv.innerText = result.report || "无报告内容";
+            }
+            
+            // 2. FOG 分析图
+            const fogImg = document.getElementById('fogPlotImg');
+            if (fogImg && result.fog_plot) {
+                fogImg.src = 'data:image/png;base64,' + result.fog_plot;
+                fogImg.style.display = 'block';
+            }
+            
+            // 3. 雷达图
+            const radarImg = document.getElementById('radarPlotImg');
+            if (radarImg && result.radar_plot) {
+                radarImg.src = 'data:image/png;base64,' + result.radar_plot;
+                radarImg.style.display = 'block';
+            }
+            
+            // 4. 趋势图
+            const trendImg = document.getElementById('trendPlotImg');
+            if (trendImg && result.trend_plot) {
+                trendImg.src = 'data:image/png;base64,' + result.trend_plot;
+                trendImg.style.display = 'block';
+            }
+            
+            // 5. 可选：显示冻结次数、比例等指标（如果你在 HTML 中添加了对应元素）
+            if (result.fog_count !== undefined) {
+                const fogCountSpan = document.getElementById('fogCountValue');
+                if (fogCountSpan) fogCountSpan.innerText = result.fog_count;
+            }
+            if (result.fog_ratio !== undefined) {
+                const fogRatioSpan = document.getElementById('fogRatioValue');
+                if (fogRatioSpan) fogRatioSpan.innerText = result.fog_ratio.toFixed(1) + '%';
+            }
+            if (result.fall_score !== undefined) {
+                const fallScoreSpan = document.getElementById('fallScoreValue');
+                if (fallScoreSpan) fallScoreSpan.innerText = result.fall_score;
+            }
+            
         } catch (error) {
             console.error("请求失败:", error);
+            const reportDiv = document.getElementById('reportText');
+            if (reportDiv) reportDiv.innerText = "分析请求失败，请检查网络或稍后重试。";
         }
-        // 清空历史缓冲区（或保留一部分重叠）
+        // 清空历史缓冲区（可根据需要保留部分重叠，这里简单清空）
         historyBuffer = [];
-    }, 30000); // 30 秒，可根据需要调整
+    }, 30000); // 30 秒
+}
 }
     // ==================== BLE 连接 ====================
     function onDataReceived(event) {
